@@ -50,8 +50,7 @@ def loss_epoch(model, loss_fn, dataloader, device, optimizer=None):
     return loss, metric
 
 
-def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader, device, lr_scheduler,
-          weight_path):
+def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader, device, lr_scheduler):
     loss_history = {"train": [], "val": []}
     metric_history = {"train": [], "val": []}
 
@@ -77,7 +76,6 @@ def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader
         if val_loss < best_loss:
             best_loss = val_loss
             best_model_weights = copy.deepcopy(model.state_dict())
-            torch.save(model.state_dict(), weight_path)
 
         lr_scheduler.step(val_loss)
 

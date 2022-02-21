@@ -53,6 +53,6 @@ if __name__ == "__main__":
     num_epochs = 100
 
     model, loss_history, metric_history = train(model, num_epochs, loss_fn, optimizer, train_loader, val_loader, device,
-                                                lr_scheduler, "./weights.pt")
+                                                lr_scheduler)
 
     show_history(num_epochs, loss_history, metric_history)

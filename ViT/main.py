@@ -1,6 +1,6 @@
 import torch
 from patch_embedding import PatchEmbedding
-from multi_head_attention import MultiHeadAttention
+from transformer_encoder_block import TransformerEncoderBlock
 
 
 if __name__ == "__main__":
@@ -10,12 +10,10 @@ if __name__ == "__main__":
     x = torch.randn(8, 3, 224, 224).to(device)
     print(x.shape)
 
-    patch_embedding = PatchEmbedding(3, 16, 768, 224).to(device)
-
-    x = patch_embedding(x)
+    embedding = PatchEmbedding(3, 16, 768, 224).to(device)
+    x = embedding(x)
     print(x.shape)
 
-    mha = MultiHeadAttention(768, 8).to(device)
-
-    x = mha(x)
+    encoder = TransformerEncoderBlock(768, 8, 4).to(device)
+    x = encoder(x)
     print(x.shape)

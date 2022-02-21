@@ -1,7 +1,6 @@
 import torch
 
-from torch import nn
-from torch import Tensor
+from torch import nn, Tensor
 from einops import repeat
 from einops.layers.torch import Rearrange
 
@@ -13,7 +12,7 @@ class PatchEmbedding(nn.Module):
         self.patch_size = patch_size
         self.projection = nn.Sequential(
             nn.Conv2d(in_channels, embedding_size, kernel_size=patch_size, stride=patch_size),
-            Rearrange('b e (h) (w) -> b (h w) e'),
+            Rearrange("b e (h) (w) -> b (h w) e"),
         )
         self.cls_token = nn.Parameter(torch.randn(1, 1, embedding_size))
         self.pos_embedding = nn.Parameter(torch.randn((img_size // patch_size) ** 2 + 1, embedding_size))
@@ -21,9 +20,11 @@ class PatchEmbedding(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         b, _, _, _ = x.shape
 
-        x_projected = self.projection(x)
+        x = self.projection(x)
 
-        cls_token = repeat(self.cls_token, '() n e -> b n e', b=b)
-        x_concatenated = torch.concat((cls_token, x_projected), dim=1)
+        cls_token = repeat(self.cls_token, "() n e -> b n e", b=b)
+        x = torch.concat((cls_token, x), dim=1)
 
-        return x_concatenated + self.pos_embedding
+        out = x + self.pos_embedding
+
+        return out

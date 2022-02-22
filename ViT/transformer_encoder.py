@@ -1,0 +1,10 @@
+from torch import nn
+
+from transformer_encoder_block import TransformerEncoderBlock
+
+
+class TransformerEncoder(nn.Sequential):
+    def __init__(self, depth: int = 12, embedding_size: int = 768, num_heads: int = 8, mlp_expansion: int = 4):
+        super().__init__(
+            *[TransformerEncoderBlock(embedding_size, num_heads, mlp_expansion) for _ in range(depth)]
+        )

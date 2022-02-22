@@ -47,12 +47,12 @@ if __name__ == "__main__":
 
     show_sample_img(train_set)
 
-    model = ViT(in_channels=3, patch_size=16, embedding_size=768, img_size=224, depth=12, num_heads=8, mlp_expansion=4,
+    model = ViT(in_channels=3, patch_size=16, embedding_size=768, img_size=224, depth=12, num_heads=12, mlp_expansion=4,
                 num_classes=10).to(device)
 
     loss_fn = nn.CrossEntropyLoss(reduction="sum")
     optimizer = optim.Adam(model.parameters(), lr=0.01)
-    lr_scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10)
+    lr_scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
 
     num_epochs = 100
 

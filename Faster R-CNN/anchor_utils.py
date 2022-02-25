@@ -109,12 +109,12 @@ def calc_anchors_reg_parameters(anchors: np.ndarray, bboxes: np.ndarray, ious: n
     return reg_parameters
 
 
-def create_target_anchors(num_anchors: int, valid_anchors: np.ndarray, valid_anchor_indexes: np.ndarray,
+def create_target_anchors(num_anchors: int, num_sample: int, valid_anchors: np.ndarray, valid_anchor_indexes: np.ndarray,
                           bboxes: Tensor) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     ious = bbox_iou(valid_anchors, bboxes.to("cpu").numpy())
 
     valid_anchors_label = create_anchors_label(valid_anchors, ious, 0.7, 0.3)
-    valid_anchors_label = sample_anchors(valid_anchors_label, 128, 0.5)
+    valid_anchors_label = sample_anchors(valid_anchors_label, num_sample, 0.5)
 
     target_anchors_label = np.empty(num_anchors, dtype=np.int32)
     target_anchors_label.fill(-1)

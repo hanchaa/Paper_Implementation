@@ -1,6 +1,3 @@
-import os
-import sys
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -10,7 +7,6 @@ from torch import nn, optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 
-sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from train import train, show_history
 from vit import ViT
 

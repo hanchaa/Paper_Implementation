@@ -1,29 +1,90 @@
+import albumentations as A
+import cv2
+import matplotlib.pyplot as plt
+import torch
+from PIL import ImageDraw
+from albumentations.pytorch import ToTensorV2
+from torch import optim
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.utils.data import DataLoader
+from torchvision.transforms.functional import to_pil_image
+
+from anchor_utils import *
 from faster_rcnn import FasterRCNN
-from loss import *
+from loss import RPNLoss
+from region_proposal import RegionProposal
 from rpn import RPN
+from train import train
 from vit_feature_extractor import ViTFeatureExtractor
+from voc_dataset import VOCDataset, classes
 
-device = "cpu" if torch.cuda.is_available() else "cpu"
+colors = np.random.randint(0, 255, size=(20, 3), dtype="uint8")
 
-faster_rcnn = FasterRCNN(ViTFeatureExtractor(3, 16, 768, 800, 12, 12, 4), RPN(768, 512, 9)).to(device)
 
-dummy_bbox = torch.FloatTensor([[20, 30, 400, 500], [300, 400, 500, 600]]).to(device)
-dummy_image = torch.zeros(1, 3, 800, 800).float().to(device)
+def show(img, targets, labels, classes=classes):
+    img = to_pil_image(img)
+    draw = ImageDraw.Draw(img)
+    targets = np.array(targets)
+
+    for target, label in zip(targets, labels):
+        id = int(label)
+        bbox = target[:4]
+
+        color = [int(c) for c in colors[id]]
+        name = classes[id]
+
+        draw.rectangle(((bbox[0], bbox[1]), (bbox[2], bbox[3])), outline=tuple(color), width=3)
+        draw.text((bbox[0], bbox[1]), name, fill=(255, 255, 255, 0))
+
+    plt.imshow(np.array(img))
+    plt.show()
+
 
 if __name__ == "__main__":
-    image_size = (800, 800)
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    data_path = "../datasets"
 
-    anchors = create_anchors([8, 16, 32], [0.5, 1, 2], 16, (50, 50), image_size)
-    valid_anchor_indexes = get_valid_anchor_indexes(anchors, image_size)
-    valid_anchors = anchors[valid_anchor_indexes]
+    train_dataset = VOCDataset(data_path, year="2007", image_set="train", download=True)
+    validation_dataset = VOCDataset(data_path, year="2007", image_set="test", download=True)
 
-    num_anchor_sample = 256
-    rpn_lambda = 10
+    image_size = (224, 224)
 
-    predicted_anchors_reg_parameter, predicted_anchors_class_score = faster_rcnn(dummy_image)
+    train_transforms = A.Compose([
+        A.LongestMaxSize(max_size=image_size[0]),
+        A.PadIfNeeded(min_height=image_size[0], min_width=image_size[1], border_mode=cv2.BORDER_CONSTANT),
+        ToTensorV2()
+    ],
+        bbox_params=A.BboxParams(format="pascal_voc", min_visibility=0.4, label_fields=[])
+    )
+    validation_transforms = A.Compose([
+        A.LongestMaxSize(max_size=image_size[0]),
+        A.PadIfNeeded(min_height=image_size[0], min_width=image_size[1], border_mode=cv2.BORDER_CONSTANT),
+        ToTensorV2()
+    ],
+        bbox_params=A.BboxParams(format="pascal_voc", min_visibility=0.4, label_fields=[])
+    )
 
-    rpn_loss, ious = calc_rpn_loss(predicted_anchors_class_score, predicted_anchors_reg_parameter, valid_anchors,
-                                   valid_anchor_indexes, dummy_bbox, len(anchors), num_anchor_sample,
-                                   rpn_lambda)
+    train_dataset.transforms = train_transforms
+    validation_dataset.transforms = validation_transforms
 
-    print(rpn_loss)
+    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
+    validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True)
+
+    model = FasterRCNN(
+        [2, 4, 8],
+        [0.5, 1, 2],
+        16,
+        image_size,
+        ViTFeatureExtractor(3, 16, 768, image_size[0], 12, 12, 4),
+        RPN(768, 512, 9),
+        RegionProposal(image_size, 12000, 2000, 6000, 300, 16, 0.7),
+        device
+    ).to(device)
+
+    rpn_loss_fn = RPNLoss(model.anchors, image_size, 256, 10)
+
+    optimizer = optim.Adam(model.parameters(), lr=0.1)
+    lr_scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
+
+    model, loss_history = train(model, 30, train_dataloader, validation_dataloader, rpn_loss_fn,
+                                optimizer, lr_scheduler, device)

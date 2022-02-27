@@ -83,7 +83,7 @@ def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader
             train_loss, val_loss, 100 * val_metric, (time.time() - start_time) / 60))
         print("-" * 10)
 
-        model.load_state_dict(best_model_weights)
+    model.load_state_dict(best_model_weights)
 
     return model, loss_history, metric_history
 

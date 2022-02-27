@@ -17,7 +17,7 @@ class RPN(nn.Module):
     def forward(self, x):
         x = self.conv1(x)
 
-        predicted_anchors_reg_parameter = rearrange(self.reg_layer(x), "b (n e) h w -> b (h w n) e", n=self.num_anchors)
+        predicted_anchors_location = rearrange(self.reg_layer(x), "b (n e) h w -> b (h w n) e", n=self.num_anchors)
         predicted_anchors_class_score = rearrange(self.cls_layer(x), "b (n e) h w -> b (h w n) e", n=self.num_anchors)
 
-        return predicted_anchors_reg_parameter, predicted_anchors_class_score
+        return predicted_anchors_location, predicted_anchors_class_score

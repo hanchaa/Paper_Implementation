@@ -12,7 +12,7 @@ from vit import ViT
 from early_stopping import EarlyStopping
 
 
-def show_sample_img(data):
+def show_sample_img(data, classes):
     indexes = np.random.randint(0, len(train_set), 4)
 
     x_grid = [data[i][0] for i in indexes]
@@ -26,7 +26,7 @@ def show_sample_img(data):
 
     plt.imshow(np_img_tr)
 
-    plt.title("labels: " + str(y_grid))
+    plt.title(f"labels: {classes[y_grid[0]]} {classes[y_grid[1]]} {classes[y_grid[2]]} {classes[y_grid[3]]}")
     plt.show()
 
 
@@ -34,15 +34,17 @@ if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
     data_path = "../datasets"
 
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Resize(224)])
+    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-    train_set = torchvision.datasets.STL10(root=data_path, split="train", download=True, transform=transform)
-    train_loader = DataLoader(train_set, batch_size=16, shuffle=True)
+    train_set = torchvision.datasets.CIFAR10(root=data_path, train=True, download=True, transform=transform)
+    train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
 
-    test_set = torchvision.datasets.STL10(root=data_path, split="test", download=True, transform=transform)
-    val_loader = DataLoader(test_set, batch_size=64, shuffle=True)
+    test_set = torchvision.datasets.CIFAR10(root=data_path, train=False, download=True, transform=transform)
+    val_loader = DataLoader(test_set, batch_size=1, shuffle=True)
 
-    show_sample_img(train_set)
+    classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+
+    show_sample_img(train_set, classes)
 
     model = ViT(in_channels=3, patch_size=16, embedding_size=768, img_size=224, depth=12, num_heads=12, mlp_expansion=4,
                 num_classes=10).to(device)

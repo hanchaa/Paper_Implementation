@@ -50,7 +50,7 @@ def loss_epoch(model, loss_fn, dataloader, device, optimizer=None):
     return loss, metric
 
 
-def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader, device, lr_scheduler):
+def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader, device, lr_scheduler, early_stopping):
     loss_history = {"train": [], "val": []}
     metric_history = {"train": [], "val": []}
 
@@ -77,13 +77,22 @@ def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader
             best_loss = val_loss
             best_model_weights = copy.deepcopy(model.state_dict())
 
+        early_stopping(val_loss, model)
+
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break
+
         lr_scheduler.step(val_loss)
+
+        if get_lr(optimizer) != current_lr:
+            model.load_state_dict(best_model_weights)
 
         print("train loss: %.6f / val loss: %.6f / accuracy: %.2f / time: %.4f min" % (
             train_loss, val_loss, 100 * val_metric, (time.time() - start_time) / 60))
         print("-" * 10)
 
-        model.load_state_dict(best_model_weights)
+    model.load_state_dict(best_model_weights)
 
     return model, loss_history, metric_history
 

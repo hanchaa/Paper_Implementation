@@ -9,6 +9,7 @@ from torch.utils.data import DataLoader
 
 from train import train, show_history
 from vit import ViT
+from early_stopping import EarlyStopping
 
 
 def show_sample_img(data):
@@ -49,10 +50,11 @@ if __name__ == "__main__":
     loss_fn = nn.CrossEntropyLoss(reduction="sum")
     optimizer = optim.Adam(model.parameters(), lr=0.01)
     lr_scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
+    early_stopping = EarlyStopping(10, True)
 
-    num_epochs = 100
+    num_epochs = 50
 
     model, loss_history, metric_history = train(model, num_epochs, loss_fn, optimizer, train_loader, val_loader, device,
-                                                lr_scheduler)
+                                                lr_scheduler, early_stopping)
 
     show_history(num_epochs, loss_history, metric_history)

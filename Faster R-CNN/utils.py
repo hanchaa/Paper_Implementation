@@ -56,38 +56,16 @@ def calc_reg_parameters(anchors: Tensor, targets: Tensor) -> Tensor:
     return reg_parameters
 
 
-def regress_roi(anchors: np.ndarray, reg_parameters: np.ndarray) -> np.ndarray:
-    anchors_width = anchors[:, 2] - anchors[:, 0]
-    anchors_height = anchors[:, 3] - anchors[:, 1]
-    anchors_ctr_x = (anchors[:, 0] + anchors[:, 2]) / 2
-    anchors_ctr_y = (anchors[:, 1] + anchors[:, 3]) / 2
-
-    dx, dy, dw, dh = reg_parameters.T
-
-    width = np.exp(dw) * anchors_width
-    height = np.exp(dh) * anchors_height
-    ctr_x = anchors_width * dx + anchors_ctr_x
-    ctr_y = anchors_height * dy + anchors_ctr_y
-
-    roi = np.zeros_like(anchors)
-    roi[:, 0] = ctr_x - width * 0.5
-    roi[:, 1] = ctr_y - height * 0.5
-    roi[:, 2] = ctr_x + width * 0.5
-    roi[:, 3] = ctr_y + width * 0.5
-
-    return roi
-
-
 def nms(rois: np.ndarray, scores: np.ndarray, nms_thresh: float) -> Tuple[np.ndarray, np.array]:
-    order = scores.argsort()[::-1]
+    order = scores.argsort().flip(dims=[0])
 
     keep_index = []
 
-    while order.size > 0:
+    while order.size(dim=0) > 0:
         i = order[0]
         keep_index.append(i)
         ious = bbox_iou(rois[i][np.newaxis, :], rois[order[1:]])
-        inds = np.where(ious <= nms_thresh)[1]
+        inds = torch.where(ious <= nms_thresh)[1]
         order = order[inds + 1]
 
-    return rois[keep_index], scores[keep_index]
+    return rois[keep_index]

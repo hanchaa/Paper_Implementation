@@ -1,7 +1,6 @@
 import albumentations as A
 import cv2
 import matplotlib.pyplot as plt
-import torch
 from PIL import ImageDraw
 from albumentations.pytorch import ToTensorV2
 from torch import optim
@@ -9,10 +8,11 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 from torchvision.transforms.functional import to_pil_image
 
-from anchor_utils import *
+from fast_rcnn import FastRCNN
 from faster_rcnn import FasterRCNN
-from loss import RPNLoss
+from loss import *
 from region_proposal import RegionProposal
+from roi_sampler import RoiSampler
 from rpn import RPN
 from train import train
 from vit_feature_extractor import ViTFeatureExtractor
@@ -78,13 +78,16 @@ if __name__ == "__main__":
         ViTFeatureExtractor(3, 16, 768, image_size[0], 12, 12, 4),
         RPN(768, 512, 9),
         RegionProposal(image_size, 12000, 2000, 6000, 300, 16, 0.7),
+        RoiSampler(128, 0.25, 0.5, 0.5),
+        FastRCNN((7, 7), 768, 16, 4096, 21),
         device
     ).to(device)
 
     rpn_loss_fn = RPNLoss(model.anchors, image_size, 256, 10)
+    fast_rcnn_loss_fn = FastRCNNLoss(10)
 
     optimizer = optim.Adam(model.parameters(), lr=0.1)
     lr_scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
 
-    model, loss_history = train(model, 30, train_dataloader, validation_dataloader, rpn_loss_fn,
+    model, loss_history = train(model, 30, train_dataloader, validation_dataloader, rpn_loss_fn, fast_rcnn_loss_fn,
                                 optimizer, lr_scheduler, device)

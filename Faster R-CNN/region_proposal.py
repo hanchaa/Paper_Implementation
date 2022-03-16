@@ -23,8 +23,8 @@ class RegionProposal:
 
     def __call__(self, predicted_anchors_location, predicted_anchors_class_score, is_training):
         rois = predicted_anchors_location[0].detach()
-        rois[:, 0:4:2] = torch.clip(rois[:, 0:4:2], min=0, max=self.img_size[0])
-        rois[:, 1:4:2] = torch.clip(rois[:, 1:4:2], min=0, max=self.img_size[1])
+        rois[:, 0:4:2] = torch.clip(rois[:, 0:4:2], min=0, max=self.img_size[1])
+        rois[:, 1:4:2] = torch.clip(rois[:, 1:4:2], min=0, max=self.img_size[0])
 
         rois_w = rois[:, 2] - rois[:, 0]
         rois_h = rois[:, 3] - rois[:, 1]

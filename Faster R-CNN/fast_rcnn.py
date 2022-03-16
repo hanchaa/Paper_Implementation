@@ -26,7 +26,7 @@ class FastRCNN(nn.Module):
 
         roi_features = []
         for roi in rois:
-            roi_feature = feature_map[..., roi[0]:roi[2] + 1, roi[1]:roi[3] + 1]
+            roi_feature = feature_map[..., roi[1]:roi[3] + 1, roi[0]:roi[2] + 1]
             roi_features.append(roi_feature)
 
         roi_features = torch.stack(roi_features, dim=0)

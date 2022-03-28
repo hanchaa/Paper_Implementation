@@ -3,13 +3,13 @@ import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
+from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 from torch import nn, optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau
 from torch.utils.data import DataLoader
 
+from early_stopping import EarlyStopping
 from train import train, show_history
 from vit import ViT
-from early_stopping import EarlyStopping
 
 
 def show_sample_img(data, classes):
@@ -37,24 +37,27 @@ if __name__ == "__main__":
     transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
     train_set = torchvision.datasets.CIFAR10(root=data_path, train=True, download=True, transform=transform)
-    train_loader = DataLoader(train_set, batch_size=64, shuffle=True)
+    train_loader = DataLoader(train_set, batch_size=256, shuffle=True)
 
     test_set = torchvision.datasets.CIFAR10(root=data_path, train=False, download=True, transform=transform)
-    val_loader = DataLoader(test_set, batch_size=1, shuffle=True)
+    val_loader = DataLoader(test_set, batch_size=512, shuffle=True)
 
     classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
     show_sample_img(train_set, classes)
 
-    model = ViT(in_channels=3, patch_size=16, embedding_size=768, img_size=224, depth=12, num_heads=12, mlp_expansion=4,
+    model = ViT(in_channels=3, patch_size=4, embedding_size=192, img_size=32, depth=12, num_heads=12, mlp_expansion=4,
                 num_classes=10).to(device)
 
+    model.load_state_dict(torch.load("./checkpoint.pt"))
+
     loss_fn = nn.CrossEntropyLoss(reduction="sum")
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
-    lr_scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
+    optimizer = optim.Adam(model.parameters(), lr=0)
+    lr_scheduler = CosineAnnealingWarmupRestarts(optimizer, first_cycle_steps=15, warmup_steps=5, max_lr=0.007,
+                                                 min_lr=0.00001, gamma=0.7)
     early_stopping = EarlyStopping(10, True)
 
-    num_epochs = 50
+    num_epochs = 100
 
     model, loss_history, metric_history = train(model, num_epochs, loss_fn, optimizer, train_loader, val_loader, device,
                                                 lr_scheduler, early_stopping)

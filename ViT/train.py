@@ -79,14 +79,11 @@ def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader
 
         early_stopping(val_loss, model)
 
-        if early_stopping.early_stop:
-            print("Early stopping")
-            break
+        # if early_stopping.early_stop:
+        #     print("Early stopping")
+        #     break
 
-        lr_scheduler.step(val_loss)
-
-        if get_lr(optimizer) != current_lr:
-            model.load_state_dict(best_model_weights)
+        lr_scheduler.step()
 
         print("train loss: %.6f / val loss: %.6f / accuracy: %.2f / time: %.4f min" % (
             train_loss, val_loss, 100 * val_metric, (time.time() - start_time) / 60))

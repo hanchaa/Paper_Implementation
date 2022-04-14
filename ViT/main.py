@@ -1,65 +1,69 @@
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
 import torchvision
 import torchvision.transforms as transforms
-from cosine_annealing_warmup import CosineAnnealingWarmupRestarts
 from torch import nn, optim
+from torch.optim.lr_scheduler import StepLR
+from torch.distributed import init_process_group
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 
 from early_stopping import EarlyStopping
 from train import train, show_history
 from vit import ViT
 
 
-def show_sample_img(data, classes):
-    indexes = np.random.randint(0, len(train_set), 4)
+def main_worker(device, num_gpus_per_node):
+    data_path = "./datasets"
 
-    x_grid = [data[i][0] for i in indexes]
-    y_grid = [data[i][1] for i in indexes]
+    train_batch_size = 128 // num_gpus_per_node
+    test_batch_size = 256 // num_gpus_per_node
 
-    x_grid = torchvision.utils.make_grid(x_grid, nrow=4, padding=2)
-    plt.figure(figsize=(10, 10))
+    init_process_group(
+        backend="nccl",
+        init_method="tcp://127.0.0.1:3456",
+        world_size=num_gpus_per_node,
+        rank=device
+    )
+    torch.cuda.set_device(device)
 
-    np_img = x_grid.numpy()
-    np_img_tr = np_img.transpose((1, 2, 0))
+    transform = transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761))
+    ])
 
-    plt.imshow(np_img_tr)
+    train_set = torchvision.datasets.CIFAR100(root=data_path, train=True, download=True, transform=transform)
+    train_sampler = DistributedSampler(train_set)
+    train_loader = DataLoader(train_set, batch_size=train_batch_size, pin_memory=True, num_workers=4, shuffle=False,
+                              sampler=train_sampler)
 
-    plt.title(f"labels: {classes[y_grid[0]]} {classes[y_grid[1]]} {classes[y_grid[2]]} {classes[y_grid[3]]}")
-    plt.show()
+    val_set = torchvision.datasets.CIFAR100(root=data_path, train=False, download=True, transform=transform)
+    val_sampler = DistributedSampler(val_set)
+    val_loader = DataLoader(val_set, batch_size=test_batch_size, pin_memory=True, num_workers=4, shuffle=False,
+                            sampler=val_sampler)
 
+    model = ViT(in_channels=3, patch_size=16, embedding_size=768, img_size=224, depth=12, num_heads=12, mlp_expansion=4,
+                num_classes=100).to(device)
 
-if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    data_path = "../datasets"
-
-    transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
-
-    train_set = torchvision.datasets.CIFAR10(root=data_path, train=True, download=True, transform=transform)
-    train_loader = DataLoader(train_set, batch_size=256, shuffle=True)
-
-    test_set = torchvision.datasets.CIFAR10(root=data_path, train=False, download=True, transform=transform)
-    val_loader = DataLoader(test_set, batch_size=512, shuffle=True)
-
-    classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
-
-    show_sample_img(train_set, classes)
-
-    model = ViT(in_channels=3, patch_size=4, embedding_size=192, img_size=32, depth=12, num_heads=12, mlp_expansion=4,
-                num_classes=10).to(device)
-
-    model.load_state_dict(torch.load("./checkpoint.pt"))
+    # model.load_state_dict(torch.load("./checkpoint.pt"))
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device])
 
     loss_fn = nn.CrossEntropyLoss(reduction="sum")
-    optimizer = optim.Adam(model.parameters(), lr=0)
-    lr_scheduler = CosineAnnealingWarmupRestarts(optimizer, first_cycle_steps=15, warmup_steps=5, max_lr=0.007,
-                                                 min_lr=0.00001, gamma=0.7)
+    optimizer = optim.Adam(model.parameters(), lr=0.1)
+    lr_scheduler = StepLR(optimizer, step_size=20, gamma=0.5)
     early_stopping = EarlyStopping(10, True)
 
     num_epochs = 100
 
     model, loss_history, metric_history = train(model, num_epochs, loss_fn, optimizer, train_loader, val_loader, device,
-                                                lr_scheduler, early_stopping)
+                                                lr_scheduler, early_stopping, num_gpus_per_node, verbose=device == 0)
 
-    show_history(num_epochs, loss_history, metric_history)
+    if device == 0:
+        show_history(num_epochs, loss_history, metric_history)
+        torch.save(model.state_dict(), "./weights.pt")
+
+
+if __name__ == "__main__":
+    num_gpus_per_node = torch.cuda.device_count()
+
+    torch.multiprocessing.spawn(main_worker, nprocs=num_gpus_per_node, args=(num_gpus_per_node,))

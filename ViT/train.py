@@ -3,6 +3,8 @@ import time
 
 import matplotlib.pyplot as plt
 import torch
+from torch.distributed import all_reduce
+from tqdm import tqdm
 
 
 def get_lr(optimizer):
@@ -11,8 +13,8 @@ def get_lr(optimizer):
 
 
 def metric_batch(output, target):
-    predicted = output.argmax(1, keepdim=True)
-    corrects = predicted.eq(target.view_as(predicted)).sum().item()
+    predicted = output.argmax(1)
+    corrects = predicted.eq(target).sum().item()
     return corrects
 
 
@@ -28,12 +30,12 @@ def loss_batch(loss_fn, output, target, optimizer=None):
     return loss.item(), metric
 
 
-def loss_epoch(model, loss_fn, dataloader, device, optimizer=None):
+def loss_epoch(model, loss_fn, dataloader, device, optimizer=None, verbose=False):
     running_loss = 0.0
     running_metric = 0.0
     len_data = len(dataloader.dataset)
 
-    for x_batch, y_batch in dataloader:
+    for x_batch, y_batch in tqdm(dataloader) if verbose else dataloader:
         x_batch = x_batch.to(device)
         y_batch = y_batch.to(device)
 
@@ -50,7 +52,8 @@ def loss_epoch(model, loss_fn, dataloader, device, optimizer=None):
     return loss, metric
 
 
-def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader, device, lr_scheduler, early_stopping):
+def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader, device, lr_scheduler, early_stopping,
+          num_gpus_per_node, verbose=False):
     loss_history = {"train": [], "val": []}
     metric_history = {"train": [], "val": []}
 
@@ -60,16 +63,36 @@ def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader
 
     for epoch in range(num_epochs):
         current_lr = get_lr(optimizer)
-        print(f"Epoch {epoch + 1}/{num_epochs}, current lr = {current_lr}")
+
+        if verbose:
+            print(f"Epoch {epoch + 1}/{num_epochs}, current lr = {current_lr}")
 
         model.train()
-        train_loss, train_metric = loss_epoch(model, loss_fn, train_loader, device, optimizer)
-        loss_history["train"].append(train_loss)
-        metric_history["train"].append(train_metric)
+        train_loss, train_metric = loss_epoch(model, loss_fn, train_loader, device, optimizer, verbose)
 
         model.eval()
         with torch.no_grad():
-            val_loss, val_metric = loss_epoch(model, loss_fn, validation_loader, device)
+            val_loss, val_metric = loss_epoch(model, loss_fn, validation_loader, device, verbose=verbose)
+
+        lr_scheduler.step()
+
+        loss = torch.tensor([train_loss, train_metric, val_loss, val_metric]).to(device)
+        all_reduce(loss)
+
+        train_loss, train_metric, val_loss, val_metric = loss
+        train_loss /= num_gpus_per_node
+        train_metric /= num_gpus_per_node
+        val_loss /= num_gpus_per_node
+        val_metric /= num_gpus_per_node
+
+        if verbose:
+            print("train loss: %.6f / val loss: %.6f / accuracy: %.2f / time: %.4f min" % (
+                train_loss, val_loss, 100 * val_metric, (time.time() - start_time) / 60))
+            print("-" * 10)
+
+        loss_history["train"].append(train_loss)
+        metric_history["train"].append(train_metric)
+
         loss_history["val"].append(val_loss)
         metric_history["val"].append(val_metric)
 
@@ -77,17 +100,11 @@ def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader
             best_loss = val_loss
             best_model_weights = copy.deepcopy(model.state_dict())
 
-        early_stopping(val_loss, model)
+        # early_stopping(val_loss, model)
 
         # if early_stopping.early_stop:
         #     print("Early stopping")
         #     break
-
-        lr_scheduler.step()
-
-        print("train loss: %.6f / val loss: %.6f / accuracy: %.2f / time: %.4f min" % (
-            train_loss, val_loss, 100 * val_metric, (time.time() - start_time) / 60))
-        print("-" * 10)
 
     model.load_state_dict(best_model_weights)
 

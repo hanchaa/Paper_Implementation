@@ -23,7 +23,7 @@ class PatchEmbedding(nn.Module):
         x = self.projection(x)
 
         cls_token = repeat(self.cls_token, "() n e -> b n e", b=b)
-        x = torch.concat((cls_token, x), dim=1)
+        x = torch.cat((cls_token, x), dim=1)
 
         out = x + self.pos_embedding
 

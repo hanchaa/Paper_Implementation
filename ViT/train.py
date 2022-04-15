@@ -13,7 +13,7 @@ def get_lr(optimizer):
 
 
 def metric_batch(output, target):
-    predicted = output.argmax(1)
+    predicted = output.argmax(-1)
     corrects = predicted.eq(target).sum().item()
     return corrects
 
@@ -33,7 +33,6 @@ def loss_batch(loss_fn, output, target, optimizer=None):
 def loss_epoch(model, loss_fn, dataloader, device, optimizer=None, verbose=False):
     running_loss = 0.0
     running_metric = 0.0
-    len_data = len(dataloader.dataset)
 
     for x_batch, y_batch in tqdm(dataloader) if verbose else dataloader:
         x_batch = x_batch.to(device)
@@ -46,14 +45,14 @@ def loss_epoch(model, loss_fn, dataloader, device, optimizer=None, verbose=False
         running_loss += loss
         running_metric += metric
 
-    loss = running_loss / len_data
-    metric = running_metric / len_data
+    loss = running_loss
+    metric = running_metric
 
     return loss, metric
 
 
 def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader, device, lr_scheduler, early_stopping,
-          num_gpus_per_node, verbose=False):
+          verbose=False):
     loss_history = {"train": [], "val": []}
     metric_history = {"train": [], "val": []}
 
@@ -76,18 +75,18 @@ def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader
 
         lr_scheduler.step()
 
-        loss = torch.tensor([train_loss, train_metric, val_loss, val_metric]).to(device)
-        all_reduce(loss)
+        train_result = torch.tensor([train_loss, train_metric, val_loss, val_metric]).to(device)
+        all_reduce(train_result)
 
-        train_loss, train_metric, val_loss, val_metric = loss
-        train_loss /= num_gpus_per_node
-        train_metric /= num_gpus_per_node
-        val_loss /= num_gpus_per_node
-        val_metric /= num_gpus_per_node
+        train_loss, train_metric, val_loss, val_metric = train_result.cpu()
+        train_loss /= len(train_loader.dataset)
+        train_metric /= len(train_loader.dataset)
+        val_loss /= len(validation_loader.dataset)
+        val_metric /= len(validation_loader.dataset)
 
         if verbose:
-            print("train loss: %.6f / val loss: %.6f / accuracy: %.2f / time: %.4f min" % (
-                train_loss, val_loss, 100 * val_metric, (time.time() - start_time) / 60))
+            print("train loss: %.6f / train acc: %.2f / val loss: %.6f / val accuracy: %.2f / time: %.4f min" % (
+                train_loss, 100 * train_metric, val_loss, 100 * val_metric, (time.time() - start_time) / 60))
             print("-" * 10)
 
         loss_history["train"].append(train_loss)

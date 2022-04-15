@@ -49,18 +49,18 @@ def main_worker(device, num_gpus_per_node):
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device])
 
     loss_fn = nn.CrossEntropyLoss(reduction="sum")
-    optimizer = optim.Adam(model.parameters(), lr=0.1)
+    optimizer = optim.Adam(model.parameters(), lr=0.00001)
     lr_scheduler = StepLR(optimizer, step_size=20, gamma=0.5)
     early_stopping = EarlyStopping(10, True)
 
     num_epochs = 100
 
     model, loss_history, metric_history = train(model, num_epochs, loss_fn, optimizer, train_loader, val_loader, device,
-                                                lr_scheduler, early_stopping, num_gpus_per_node, verbose=device == 0)
+                                                lr_scheduler, early_stopping, verbose=device == 0)
 
     if device == 0:
-        show_history(num_epochs, loss_history, metric_history)
         torch.save(model.state_dict(), "./weights.pt")
+        show_history(num_epochs, loss_history, metric_history)
 
 
 if __name__ == "__main__":

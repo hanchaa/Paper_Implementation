@@ -43,13 +43,13 @@ def main_worker(device, num_gpus_per_node):
                             sampler=val_sampler)
 
     model = ViT(in_channels=3, patch_size=16, embedding_size=768, img_size=224, depth=12, num_heads=12, mlp_expansion=4,
-                num_classes=100).to(device)
+                num_classes=100, patch_embedding_dropout=0.5, attention_dropout=0.5, mlp_dropout=0.5).to(device)
 
     # model.load_state_dict(torch.load("./checkpoint.pt"))
     model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device])
 
     loss_fn = nn.CrossEntropyLoss(reduction="sum")
-    optimizer = optim.Adam(model.parameters(), lr=0.00001)
+    optimizer = optim.Adam(model.parameters(), lr=0.00001, weight_decay=0.1)
     lr_scheduler = StepLR(optimizer, step_size=20, gamma=0.5)
     early_stopping = EarlyStopping(10, True)
 

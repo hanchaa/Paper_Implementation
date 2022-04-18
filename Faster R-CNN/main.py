@@ -1,62 +1,35 @@
 import albumentations as A
 import cv2
-import matplotlib.pyplot as plt
-from PIL import ImageDraw
+import torchvision
 from albumentations.pytorch import ToTensorV2
 from torch import optim
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.distributed import init_process_group
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
-from torchvision.transforms.functional import to_pil_image
+from torch.utils.data.distributed import DistributedSampler
+from torch.utils.tensorboard import SummaryWriter
 
-from fast_rcnn import FastRCNN
 from faster_rcnn import FasterRCNN
 from loss import *
-from region_proposal import RegionProposal
-from roi_sampler import RoiSampler
 from rpn import RPN
 from train import train
-from vit_feature_extractor import ViTFeatureExtractor
-from voc_dataset import VOCDataset, classes
-
-colors = np.random.randint(0, 255, size=(20, 3), dtype="uint8")
+from voc_dataset import VOCDataset
 
 
-def show(img, targets, labels, classes=classes):
-    img = to_pil_image(img)
-    draw = ImageDraw.Draw(img)
-    targets = np.array(targets)
+def main_worker(device, num_gpu):
+    data_path = "./datasets"
 
-    for target, label in zip(targets, labels):
-        id = int(label)
-        bbox = target[:4]
-
-        color = [int(c) for c in colors[id]]
-        name = classes[id]
-
-        draw.rectangle(((bbox[0], bbox[1]), (bbox[2], bbox[3])), outline=tuple(color), width=3)
-        draw.text((bbox[0], bbox[1]), name, fill=(255, 255, 255, 0))
-
-    plt.imshow(np.array(img))
-    plt.show()
-
-
-if __name__ == "__main__":
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    data_path = "../datasets"
-
-    train_dataset = VOCDataset(data_path, year="2007", image_set="train", download=True)
-    validation_dataset = VOCDataset(data_path, year="2007", image_set="test", download=True)
-
-    image_size = (224, 224)
-
-    train_transforms = A.Compose([
-        A.LongestMaxSize(max_size=image_size[0]),
-        A.PadIfNeeded(min_height=image_size[0], min_width=image_size[1], border_mode=cv2.BORDER_CONSTANT),
-        ToTensorV2()
-    ],
-        bbox_params=A.BboxParams(format="pascal_voc", min_visibility=0.4, label_fields=[])
+    init_process_group(
+        backend="nccl",
+        init_method="tcp://127.0.0.1:3456",
+        world_size=num_gpu,
+        rank=device
     )
-    validation_transforms = A.Compose([
+    torch.cuda.set_device(device)
+
+    image_size = (800, 800)
+
+    transform = A.Compose([
         A.LongestMaxSize(max_size=image_size[0]),
         A.PadIfNeeded(min_height=image_size[0], min_width=image_size[1], border_mode=cv2.BORDER_CONSTANT),
         ToTensorV2()
@@ -64,30 +37,49 @@ if __name__ == "__main__":
         bbox_params=A.BboxParams(format="pascal_voc", min_visibility=0.4, label_fields=[])
     )
 
-    train_dataset.transforms = train_transforms
-    validation_dataset.transforms = validation_transforms
+    train_dataset = VOCDataset(data_path, year="2007", image_set="train", download=True, transforms=transform)
+    train_sampler = DistributedSampler(train_dataset)
+    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=False, sampler=train_sampler)
 
-    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-    validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=True)
+    validation_dataset = VOCDataset(data_path, year="2007", image_set="test", download=True, transforms=transform)
+    validation_sampler = DistributedSampler(validation_dataset)
+    validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=False, sampler=validation_sampler)
+
+    vgg16 = torchvision.models.vgg16(pretrained=True)
+    feature_extractor = vgg16.features[:30]
 
     model = FasterRCNN(
-        [2, 4, 8],
+        [8, 16, 32],
         [0.5, 1, 2],
         16,
         image_size,
-        ViTFeatureExtractor(3, 16, 768, image_size[0], 12, 12, 4),
-        RPN(768, 512, 9),
-        RegionProposal(image_size, 12000, 2000, 6000, 300, 16, 0.7),
-        RoiSampler(128, 0.25, 0.5, 0.5),
-        FastRCNN((7, 7), 768, 16, 4096, 21),
-        device
+        feature_extractor,
+        RPN(512, 512, 9),
+        device=device
     ).to(device)
 
-    rpn_loss_fn = RPNLoss(model.anchors, image_size, 256, 10)
-    fast_rcnn_loss_fn = FastRCNNLoss(10)
+    model = torch.nn.parallel.DistributedDataParallel(model, device_ids=[device])
 
-    optimizer = optim.Adam(model.parameters(), lr=0.1)
-    lr_scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=5)
+    rpn_loss_fn = RPNLoss(model.module.anchors, image_size, 256, 10)
+    # fast_rcnn_loss_fn = FastRCNNLoss(10)
 
-    model, loss_history = train(model, 30, train_dataloader, validation_dataloader, rpn_loss_fn, fast_rcnn_loss_fn,
-                                optimizer, lr_scheduler, device)
+    lr = 0.0001
+    optimizer = optim.Adam(model.parameters(), lr=lr)
+    lr_scheduler = StepLR(optimizer, gamma=0.8, step_size=5)
+
+    writer = SummaryWriter(comment=f"lr={lr}")
+
+    model, loss_history = train(model, 30, train_dataloader, validation_dataloader, optimizer, lr_scheduler,
+                                rpn_loss_fn, device=device, writer=writer, verbose=device == 0)
+
+    if device == 0:
+        torch.save(model.state_dict(), "./weights.pt")
+        torch.save(model.module.feature_extractor.state_dict(), "./rpn_weight.pt")
+        writer.flush()
+
+    writer.close()
+
+
+if __name__ == "__main__":
+    num_gpu = torch.cuda.device_count()
+    torch.multiprocessing.spawn(main_worker, nprocs=num_gpu, args=(num_gpu,))

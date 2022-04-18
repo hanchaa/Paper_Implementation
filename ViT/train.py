@@ -1,7 +1,6 @@
 import copy
 import time
 
-import matplotlib.pyplot as plt
 import torch
 from torch.distributed import all_reduce
 from tqdm import tqdm
@@ -52,10 +51,7 @@ def loss_epoch(model, loss_fn, dataloader, device, optimizer=None, verbose=False
 
 
 def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader, device, lr_scheduler, early_stopping,
-          verbose=False):
-    loss_history = {"train": [], "val": []}
-    metric_history = {"train": [], "val": []}
-
+          writer, verbose=False):
     best_loss = float("inf")
     best_model_weights = copy.deepcopy(model.state_dict())
     start_time = time.time()
@@ -89,11 +85,10 @@ def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader
                 train_loss, 100 * train_metric, val_loss, 100 * val_metric, (time.time() - start_time) / 60))
             print("-" * 10)
 
-        loss_history["train"].append(train_loss)
-        metric_history["train"].append(train_metric)
-
-        loss_history["val"].append(val_loss)
-        metric_history["val"].append(val_metric)
+            writer.add_scalar("Loss/train", train_loss, epoch)
+            writer.add_scalar("Acc/train", train_metric, epoch)
+            writer.add_scalar("Loss/val", val_loss, epoch)
+            writer.add_scalar("Acc/val", val_metric, epoch)
 
         if val_loss < best_loss:
             best_loss = val_loss
@@ -107,27 +102,4 @@ def train(model, num_epochs, loss_fn, optimizer, train_loader, validation_loader
 
     model.load_state_dict(best_model_weights)
 
-    return model, loss_history, metric_history
-
-
-def show_history(num_epochs, loss_history, metric_history):
-    plt.title("Train-Val Loss")
-
-    plt.plot(range(1, num_epochs + 1), loss_history["train"], label="train")
-    plt.plot(range(1, num_epochs + 1), loss_history["val"], label="val")
-
-    plt.ylabel("Loss")
-    plt.xlabel("Training Epochs")
-
-    plt.legend()
-    plt.show()
-
-    plt.title('Train-Val Accuracy')
-    plt.plot(range(1, num_epochs + 1), metric_history['train'], label='train')
-    plt.plot(range(1, num_epochs + 1), metric_history['val'], label='val')
-
-    plt.ylabel('Accuracy')
-    plt.xlabel('Training Epochs')
-
-    plt.legend()
-    plt.show()
+    return model

@@ -41,7 +41,7 @@ def main_worker(device, num_gpu):
     train_sampler = DistributedSampler(train_dataset)
     train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=False, sampler=train_sampler)
 
-    validation_dataset = VOCDataset(data_path, year="2007", image_set="test", download=True, transforms=transform)
+    validation_dataset = VOCDataset(data_path, year="2007", image_set="val", download=True, transforms=transform)
     validation_sampler = DistributedSampler(validation_dataset)
     validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=False, sampler=validation_sampler)
 

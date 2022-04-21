@@ -13,7 +13,7 @@ class RPNLoss:
         self.rpn_lambda = rpn_lambda
 
         self.cls_loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
-        self.reg_loss_fn = nn.SmoothL1Loss(reduction="sum")
+        self.reg_loss_fn = nn.SmoothL1Loss()
 
     def __call__(self,
                  predicted_anchors_location: Tensor,
@@ -26,17 +26,15 @@ class RPNLoss:
                                                                          bboxes)
 
         # loss of rpn
-        rpn_score = predicted_anchors_class_score[0]
-        rpn_cls_loss = self.cls_loss_fn(rpn_score, gt_rpn_label.long())
+        rpn_cls_loss = self.cls_loss_fn(predicted_anchors_class_score.reshape(-1, 2), gt_rpn_label.reshape(-1).long())
 
         mask = gt_rpn_label > 0
         gt_rpn_reg_parameter = gt_rpn_reg_parameter[mask]
-        rpn_reg_parameter = calc_reg_parameters(self.anchors, predicted_anchors_location[0])
+        rpn_reg_parameter = calc_reg_parameters(self.anchors, predicted_anchors_location)
         rpn_reg_parameter = rpn_reg_parameter[mask]
         rpn_reg_loss = self.reg_loss_fn(rpn_reg_parameter, gt_rpn_reg_parameter)
 
-        num_reg = mask.float().sum()
-        rpn_loss = rpn_cls_loss + (self.rpn_lambda / num_reg) * rpn_reg_loss
+        rpn_loss = rpn_cls_loss + self.rpn_lambda * rpn_reg_loss
 
         return rpn_loss
 

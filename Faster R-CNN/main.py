@@ -13,7 +13,7 @@ from faster_rcnn import FasterRCNN
 from loss import *
 from rpn import RPN
 from train import train
-from voc_dataset import VOCDataset
+from voc_dataset import VOCDataset, collate_fn
 
 
 def main_worker(device, num_gpu):
@@ -37,13 +37,13 @@ def main_worker(device, num_gpu):
         bbox_params=A.BboxParams(format="pascal_voc", min_visibility=0.4, label_fields=[])
     )
 
-    train_dataset = VOCDataset(data_path, year="2007", image_set="train", download=True, transforms=transform)
+    train_dataset = VOCDataset(data_path, year="2007", image_set="train", download=True, transform=transform)
     train_sampler = DistributedSampler(train_dataset)
-    train_dataloader = DataLoader(train_dataset, batch_size=1, shuffle=False, sampler=train_sampler)
+    train_dataloader = DataLoader(train_dataset, batch_size=12, shuffle=False, sampler=train_sampler, collate_fn=collate_fn)
 
-    validation_dataset = VOCDataset(data_path, year="2007", image_set="val", download=True, transforms=transform)
+    validation_dataset = VOCDataset(data_path, year="2007", image_set="val", download=True, transform=transform)
     validation_sampler = DistributedSampler(validation_dataset)
-    validation_dataloader = DataLoader(validation_dataset, batch_size=1, shuffle=False, sampler=validation_sampler)
+    validation_dataloader = DataLoader(validation_dataset, batch_size=12, shuffle=False, sampler=validation_sampler, collate_fn=collate_fn)
 
     vgg16 = torchvision.models.vgg16(pretrained=True)
     feature_extractor = vgg16.features[:30]
@@ -63,7 +63,7 @@ def main_worker(device, num_gpu):
     rpn_loss_fn = RPNLoss(model.module.anchors, image_size, 256, 10)
     # fast_rcnn_loss_fn = FastRCNNLoss(10)
 
-    lr = 0.0001
+    lr = 0.00001
     optimizer = optim.Adam(model.parameters(), lr=lr)
     lr_scheduler = StepLR(optimizer, gamma=0.8, step_size=5)
 

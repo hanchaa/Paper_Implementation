@@ -5,6 +5,8 @@ from typing import Dict, Any
 import numpy as np
 from PIL import Image
 from torchvision.datasets import VOCDetection
+import torch
+from torch.nn import functional as F
 
 classes = [
     "aeroplane",
@@ -30,6 +32,37 @@ classes = [
 ]
 
 
+def collate_fn(batch):
+    """
+    Since each image may have a different number of objects, we need a collate function (to be passed to the DataLoader).
+    This describes how to combine these tensors of different sizes. We use lists.
+    Note: this need not be defined in this Class, can be standalone.
+    :param batch: an iterable of N sets from __getitem__()
+    :return: a tensor of images, lists of varying-size tensors of bounding boxes, labels, and difficulties
+    """
+
+    images = list()
+    bboxes = list()
+    labels = list()
+
+    for b in batch:
+        images.append(b[0])
+        bboxes.append(torch.tensor(b[1]))
+        labels.append(b[2])
+
+    images = torch.stack(images, dim=0).float()
+
+    max_object_len = max([len(box) for box in bboxes])
+    bboxes = [F.pad(bbox, pad=(0, 0, 0, max_object_len - len(bbox)), mode="constant", value=0) for bbox in bboxes]
+    bboxes = torch.stack(bboxes, dim=0).float()
+
+    for l in labels:
+        for _ in range(max_object_len - len(l)):
+            l.append(-1)
+
+    return images, bboxes, labels  # tensor (N, 3, 300, 300), 3 lists of N tensors each
+
+
 class VOCDataset(VOCDetection):
     def __getitem__(self, index):
         img = np.array(Image.open(self.images[index]).convert('RGB'))
@@ -45,10 +78,10 @@ class VOCDataset(VOCDetection):
                 'ymax'], classes.index(t['name'])
 
             targets.append(list(label[:4]))  # 바운딩 박스 좌표
-            labels.append(label[4])  # 바운딩 박스 클래스
+            labels.append(int(label[4]))  # 바운딩 박스 클래스
 
-        if self.transforms:
-            augmentations = self.transforms(image=img, bboxes=targets)
+        if self.transform:
+            augmentations = self.transform(image=img, bboxes=targets)
             img = augmentations['image']
             targets = augmentations['bboxes']
 

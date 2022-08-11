@@ -131,3 +131,5 @@ dmypy.json
 # IDE cache folder
 .idea
 datasets/
+
+.DS_Store
